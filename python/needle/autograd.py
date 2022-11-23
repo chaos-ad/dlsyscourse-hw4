@@ -315,7 +315,10 @@ class Tensor(Value):
 
     def __pow__(self, other):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if isinstance(other, Tensor):
+            raise NotImplementedError()
+        else:
+            return needle.ops.PowerScalar(other)(self)
         ### END YOUR SOLUTION
 
     def __sub__(self, other):
@@ -377,7 +380,18 @@ def compute_gradient_of_variables(output_tensor, out_grad):
     reverse_topo_order = list(reversed(find_topo_sort([output_tensor])))
 
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    for node in reverse_topo_order:
+        # print(f"Visiting node {id(node)} of type {type(node.op)}")
+        ## Computing adjoint of the current node by summing up all the partial adjoints of downstream pathways:
+        node.grad = sum_node_list(node_to_output_grads_list[node])
+
+        ## Computing partial adjoint of the input nodes:
+        if node.op:
+            for (input_node, input_partial_adjoint) in zip(node.inputs, node.op.gradient_as_tuple(node.grad, node)):
+                if input_node in node_to_output_grads_list:
+                    node_to_output_grads_list[input_node].append(input_partial_adjoint)
+                else:
+                    node_to_output_grads_list[input_node] = [input_partial_adjoint]
     ### END YOUR SOLUTION
 
 
@@ -389,15 +403,25 @@ def find_topo_sort(node_list: List[Value]) -> List[Value]:
     after all its predecessors are traversed due to post-order DFS, we get a topological
     sort.
     """
-    ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+        ### BEGIN YOUR SOLUTION
+    result = []
+    visited = []
+    for node in node_list:
+        topo_sort_dfs(node, visited, result)
+    return result
     ### END YOUR SOLUTION
 
 
 def topo_sort_dfs(node, visited, topo_order):
     """Post-order DFS"""
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    if node in visited:
+        return
+    else:
+        for subnode in node.inputs:
+            topo_sort_dfs(subnode, visited, topo_order)
+        visited.append(node)
+        topo_order.append(node)
     ### END YOUR SOLUTION
 
 

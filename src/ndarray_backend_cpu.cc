@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
 
 namespace needle {
 namespace cpu {
@@ -43,65 +44,202 @@ void Fill(AlignedArray* out, scalar_t val) {
   }
 }
 
+void IncrementMultiIndex(std::vector<std::size_t> * index_ptr, std::vector<uint32_t> const& shape) {
+  assert(index_ptr && "index is null");
+  std::vector<std::size_t> & index = *index_ptr;
+  // TODO: ugly int64_t to avoid underflow, refactor me
+  for(int64_t i = shape.size() - 1; i >= 0; --i) {
+    if(index.at(i) < shape.at(i) - 1) {
+        index[i] += 1;
+        break;
+    } else {
+      index.at(i) = 0;
+    }
+  }
+}
+
+std::size_t MultiIndexToFlatIndex(std::vector<std::size_t> const& index, std::vector<uint32_t> const& strides, uint32_t offset) {
+  std::size_t result = offset;
+  for(std::size_t dim = 0, dim_end = index.size(); dim < dim_end; ++dim) {
+    result += (index[dim] * strides[dim]);
+  }
+  return result;
+}
+
+template <typename T>
+std::string ArrayToString(std::vector<T> const& index) {
+  std::ostringstream out;
+  out << "(";
+  for(std::size_t dim = 0, dim_end = index.size(); dim < dim_end; ++dim) {
+    out << index[dim];
+    if(dim < dim_end - 1) {
+      out << ", ";
+    }
+  }
+  out << ")";
+  return out.str();
+}
+
+std::string ArrayToString(AlignedArray const& index) {
+  std::ostringstream out;
+  out << "(";
+  for(std::size_t dim = 0, dim_end = index.size; dim < dim_end; ++dim) {
+    out << index.ptr[dim];
+    if(dim < dim_end - 1) {
+      out << ", ";
+    }
+  }
+  out << ")";
+  return out.str();
+}
 
 
+std::vector<uint32_t> GetCompactStrides(std::vector<uint32_t> const& shape) {
+  std::vector<uint32_t> result(shape.size(), 0);
+  uint32_t multiple = 1;
+  size_t size = shape.size();
+  for(size_t i = 0; i < size; ++i) {
+    size_t idx = (size - 1) - i;
+    // std::cout << "DEBUG[GetCompactStrides]: step=" << i << ", "
+    //           << "idx=" << idx << ", "
+    //           << "multiple=" << multiple << std::endl; 
+    result[idx] = multiple;
+    multiple *= shape[idx];
+  }
+  return result;
+}
 
-void Compact(const AlignedArray& a, AlignedArray* out, std::vector<int32_t> shape,
-             std::vector<int32_t> strides, size_t offset) {
+size_t GetSparseIdx(
+    size_t compact_idx,
+    std::vector<uint32_t> const& compact_strides,
+    size_t sparse_offset,
+    std::vector<uint32_t> const& sparse_strides
+) {
+  // std::cout << "DEBUG[Compact]: GetSparseIdx("
+  //           << "compact_idx=" << compact_idx << ", "
+  //           << "compact_strides=" << ArrayToString(compact_strides) << ", "
+  //           << "sparse_offset=" << sparse_offset << ", "
+  //           << "sparse_strides=" << ArrayToString(sparse_strides) << "):"
+  //           << std::endl;
+  size_t sparse_idx = sparse_offset;
+  size_t size = compact_strides.size();
+  for(size_t i = 0; i < size; ++i) {
+    uint32_t compact_stride = compact_strides[i];
+    uint32_t sparse_pos = compact_idx / compact_stride;
+    sparse_idx += sparse_pos * sparse_strides[i];
+    compact_idx %= compact_stride;
+    // std::cout << "DEBUG[Compact:GetSparseIdx]: step " << i << ": "
+    //           << "compact_strides[" << i << "]=" << compact_strides[i] << ", "
+    //           << "sparse_strides[" << i << "]=" << sparse_strides[i] << ", "
+    //           << "sparse_pos=" << sparse_pos << ", "
+    //           << "sparse_idx=" << sparse_idx << ", "
+    //           << "compact_idx=" << compact_idx
+    //           << std::endl;
+
+  }
+  // std::cout << "DEBUG[Compact]: GetSparseIdx("
+  //           << "compact_idx=" << compact_idx << ", "
+  //           << "compact_strides=" << ArrayToString(compact_strides) << ", "
+  //           << "sparse_offset=" << sparse_offset << ", "
+  //           << "sparse_strides=" << ArrayToString(sparse_strides) << ") -> "
+  //           << sparse_idx
+  //           << std::endl;
+  return sparse_idx;
+}
+
+void Compact(AlignedArray const& a, AlignedArray* out, std::vector<uint32_t> shape,
+             std::vector<uint32_t> in_strides, size_t in_offset) {
   /**
    * Compact an array in memory
    * 
    * Args:
-   *   a: non-compact represntation of the array, given as input
+   *   a: non-compact representation of the array, given as input
    *   out: compact version of the array to be written
    *   shape: shapes of each dimension for a and out
-   *   strides: strides of the *a* array (not out, which has compact strides)
-   *   offset: offset of the *a* array (not out, which has zero offset, being compact)
+   *   in_strides: strides of the *in* array (not out, which has compact strides)
+   *   in_offset: offset of the *in* array (not out, which has zero offset, being compact)
    * 
    * Returns:
    *  void (you need to modify out directly, rather than returning anything; this is true for all the
    *  function will implement here, so we won't repeat this note.)
    */
+
   /// BEGIN YOUR SOLUTION
   
+  // std::cout << "DEBUG[Compact]: input.offset = " << in_offset << std::endl;
+  // std::cout << "DEBUG[Compact]: input.shape = " << ArrayToString(shape) << std::endl;
+  // std::cout << "DEBUG[Compact]: input.strides = " << ArrayToString(in_strides) << std::endl;
+  // std::cout << "DEBUG[Compact]: output.size = " << out->size << std::endl;
+
+  std::vector<uint32_t> out_strides = GetCompactStrides(shape);
+
+  // std::cout << "DEBUG[Compact]: output.strides = " << ArrayToString(out_strides) << std::endl;
+
+  size_t size = out->size;
+  for(size_t out_idx = 0; out_idx < size; ++out_idx) {
+    size_t in_idx = GetSparseIdx(out_idx, out_strides, in_offset, in_strides);
+    // std::cout << "DEBUG[Compact]: copying out->ptr[" << out_idx << "] = a.ptr[" << in_idx << "] = " << a.ptr[in_idx] << std::endl;
+    out->ptr[out_idx] = a.ptr[in_idx];
+  }
+
   /// END YOUR SOLUTION
 }
 
-void EwiseSetitem(const AlignedArray& a, AlignedArray* out, std::vector<int32_t> shape,
-                  std::vector<int32_t> strides, size_t offset) {
+void EwiseSetitem(const AlignedArray& in, AlignedArray* out, std::vector<uint32_t> shape,
+                  std::vector<uint32_t> out_strides, size_t out_offset) {
   /**
    * Set items in a (non-compact) array
    * 
    * Args:
-   *   a: _compact_ array whose items will be written to out
+   *   in: _compact_ array whose items will be written to out
    *   out: non-compact array whose items are to be written
    *   shape: shapes of each dimension for a and out
-   *   strides: strides of the *out* array (not a, which has compact strides)
-   *   offset: offset of the *out* array (not a, which has zero offset, being compact)
+   *   out_strides: strides of the *out* array (not a, which has compact strides)
+   *   out_offset: offset of the *out* array (not a, which has zero offset, being compact)
    */
   /// BEGIN YOUR SOLUTION
   
+  // std::size_t size = std::accumulate(std::begin(shape), std::end(shape), 1, std::multiplies<std::size_t>());
+  
+  std::vector<uint32_t> in_strides = GetCompactStrides(shape);
+
+  size_t size = in.size;
+  for(size_t in_idx = 0; in_idx < size; ++in_idx) {
+    size_t out_idx = GetSparseIdx(in_idx, in_strides, out_offset, out_strides);
+    // std::cout << "DEBUG[Compact]: copying out->ptr[" << out_idx << "] = in.ptr[" << in_idx << "] = " << in.ptr[in_idx] << std::endl;
+    out->ptr[out_idx] = in.ptr[in_idx];
+  }
+
   /// END YOUR SOLUTION
 }
 
-void ScalarSetitem(const size_t size, scalar_t val, AlignedArray* out, std::vector<int32_t> shape,
-                   std::vector<int32_t> strides, size_t offset) {
+void ScalarSetitem(const size_t size, scalar_t val, AlignedArray* out, std::vector<uint32_t> shape,
+                   std::vector<uint32_t> out_strides, size_t out_offset) {
   /**
    * Set items is a (non-compact) array
    * 
    * Args:
    *   size: number of elements to write in out array (note that this will note be the same as
    *         out.size, because out is a non-compact subset array);  it _will_ be the same as the 
-   *         product of items in shape, but covenient to just pass it here.
+   *         product of items in shape, but convenient to just pass it here.
    *   val: scalar value to write to
    *   out: non-compact array whose items are to be written
    *   shape: shapes of each dimension of out
-   *   strides: strides of the out array
-   *   offset: offset of the out array
+   *   out_strides: strides of the out array
+   *   out_offset: offset of the out array
    */
 
   /// BEGIN YOUR SOLUTION
   
+  // std::size_t out_size = std::accumulate(std::begin(shape), std::end(shape), 1, std::multiplies<std::size_t>());
+  std::vector<uint32_t> in_strides = GetCompactStrides(shape);
+
+  for(size_t in_idx = 0; in_idx < size; ++in_idx) {
+    size_t out_idx = GetSparseIdx(in_idx, in_strides, out_offset, out_strides);
+    // std::cout << "DEBUG[Compact]: setting out->ptr[" << out_idx << "] = val = " << val << std::endl;
+    out->ptr[out_idx] = val;
+  }
+
   /// END YOUR SOLUTION
 }
 
@@ -116,7 +254,7 @@ void EwiseAdd(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
 
 void ScalarAdd(const AlignedArray& a, scalar_t val, AlignedArray* out) {
   /**
-   * Set entries in out to be the sum of correspondings entry in a plus the scalar val.
+   * Set entries in out to be the sum of corresponding entry in a plus the scalar val.
    */
   for (size_t i = 0; i < a.size; i++) {
     out->ptr[i] = a.ptr[i] + val;
@@ -125,7 +263,7 @@ void ScalarAdd(const AlignedArray& a, scalar_t val, AlignedArray* out) {
 
 
 /**
- * In the code the follows, use the above template to create analogous elementise
+ * In the code the follows, use the above template to create analogous element-wise
  * and and scalar operators for the following functions.  See the numpy backend for
  * examples of how they should work.
  *   - EwiseMul, ScalarMul
@@ -146,24 +284,141 @@ void ScalarAdd(const AlignedArray& a, scalar_t val, AlignedArray* out) {
 
 /// BEGIN YOUR SOLUTION
 
+void ScalarMul(const AlignedArray& a, scalar_t val, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] * val;
+  }
+}
+
+void ScalarDiv(const AlignedArray& a, scalar_t val, AlignedArray* out) {
+  /**
+   * Set entries in out to be the sum of corresponding entry in a plus the scalar val.
+   */
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] / val;
+  }
+}
+
+void ScalarPower(const AlignedArray& a, scalar_t val, AlignedArray* out) {
+  /**
+   * Set entries in out to be the sum of corresponding entry in a plus the scalar val.
+   */
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = pow(a.ptr[i], val);
+  }
+}
+
+void EwiseMul(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] * b.ptr[i];
+  }
+}
+
+void EwiseDiv(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] / b.ptr[i];
+  }
+}
+
+void EwiseMaximum(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = std::max(a.ptr[i], b.ptr[i]);
+  }
+}
+
+void ScalarMaximum(const AlignedArray& a, scalar_t val, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = std::max(a.ptr[i], val);
+  }
+}
+
+void ScalarEq(const AlignedArray& a, scalar_t val, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] == val ? 1 : 0;
+  }
+}
+
+
+void ScalarGe(const AlignedArray& a, scalar_t val, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] >= val ? 1 : 0;
+  }
+}
+ 
+void EwiseEq(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] == b.ptr[i] ? 1 : 0;
+  }
+}
+
+void EwiseGe(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = a.ptr[i] >= b.ptr[i] ? 1 : 0;
+  }
+}
+
+void EwiseLog(const AlignedArray& a, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = std::log(a.ptr[i]);
+  }
+}
+
+void EwiseExp(const AlignedArray& a, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = std::exp(a.ptr[i]);
+  }
+}
+
+void EwiseTanh(const AlignedArray& a, AlignedArray* out) {
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = std::tanh(a.ptr[i]);
+  }
+}
+
+
 /// END YOUR SOLUTION
 
-void Matmul(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, uint32_t m, uint32_t n,
-            uint32_t p) {
+void Matmul(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, uint32_t M, uint32_t N,
+            uint32_t P) {
   /**
-   * Multiply two (compact) matrices into an output (also comapct) matrix.  For this implementation
+   * Multiply two (compact) matrices into an output (also compact) matrix.  For this implementation
    * you can use the "naive" three-loop algorithm.
    *
    * Args:
    *   a: compact 2D array of size m x n
-   *   b: comapct 2D array of size n x p
+   *   b: compact 2D array of size n x p
    *   out: compact 2D array of size m x p to write the output to
    *   m: rows of a / out
    *   n: columns of a / rows of b
-   *   p: coolumns of b / out
+   *   p: columns of b / out
    */
 
   /// BEGIN YOUR SOLUTION
+  
+  size_t m_size = M;
+  size_t n_size = N;
+  size_t p_size = P;
+
+
+  for(size_t m = 0; m < m_size; ++m) {
+    for(size_t p = 0; p < p_size; ++p) {
+      size_t out_idx = m * p_size + p;
+      // std::cout << "calculating out->ptr[(" << m << ", " << p << ") -> " << out_idx << "]..." << std::endl;
+
+      // Do the reduction along n:
+      scalar_t val = 0;
+      for(size_t n = 0; n < n_size; ++n) {
+        size_t a_idx = m * n_size + n;
+        size_t b_idx = n * p_size + p;
+        val += a.ptr[a_idx] * b.ptr[b_idx];
+        // std::cout << "\tval += a.ptr[(" << m << ", " << n << ") -> " << a_idx 
+        //           <<      "] * b.ptr[(" << n << ", " << p << ") -> " << b_idx << "] = " << val << std::endl;
+      }
+      
+      // std::cout << "setting out->ptr[(" << m << ", " << p << ") -> " << out_idx << "] = " << val << std::endl;
+      out->ptr[out_idx] = val;
+    }
+  }
   
   /// END YOUR SOLUTION
 }
@@ -180,7 +435,7 @@ inline void AlignedDot(const float* __restrict__ a,
    * out don't have any overlapping memory (which is necessary in order for vector operations to be 
    * equivalent to their non-vectorized counterparts (imagine what could happen otherwise if a, b, 
    * and out had overlapping memory).  Similarly the __builtin_assume_aligned keyword tells the 
-   * compiler that the input array siwll be aligned to the appropriate blocks in memory, which also 
+   * compiler that the input array will be aligned to the appropriate blocks in memory, which also
    * helps the compiler vectorize the code.
    *
    * Args:
@@ -195,11 +450,34 @@ inline void AlignedDot(const float* __restrict__ a,
 
   /// BEGIN YOUR SOLUTION 
    
+  size_t m_size = TILE;
+  size_t n_size = TILE;
+  size_t p_size = TILE;
+
+  for(size_t m = 0; m < m_size; ++m) {
+    for(size_t p = 0; p < p_size; ++p) {
+      size_t out_idx = m * p_size + p;
+      // std::cout << "calculating out->ptr[(" << m << ", " << p << ") -> " << out_idx << "]..." << std::endl;
+
+      scalar_t val = 0;
+      for(size_t n = 0; n < n_size; ++n) {
+        size_t a_idx = m * n_size + n;
+        size_t b_idx = n * p_size + p;
+        val += a[a_idx] * b[b_idx];
+        // std::cout << "\tval += a[(" << m << ", " << n << ") -> " << a_idx 
+        //           <<      "] * b[(" << n << ", " << p << ") -> " << b_idx << "] = " << val << std::endl;
+      }
+      // std::cout << "setting out[(" << m << ", " << p << ") -> " << out_idx << "] = " << out[out_idx] << " += " << val << std::endl;
+      out[out_idx] += val;
+      // std::cout << "updated out[(" << m << ", " << p << ") -> " << out_idx << "] = " << out[out_idx] << std::endl;
+    }
+  }
+  
   /// END YOUR SOLUTION
 }
 
-void MatmulTiled(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, uint32_t m,
-                 uint32_t n, uint32_t p) {
+void MatmulTiled(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, uint32_t M,
+                 uint32_t N, uint32_t P) {
   /**
    * Matrix multiplication on tiled representations of array.  In this setting, a, b, and out
    * are all *4D* compact arrays of the appropriate size, e.g. a is an array of size
@@ -216,10 +494,32 @@ void MatmulTiled(const AlignedArray& a, const AlignedArray& b, AlignedArray* out
    *   out: compact 4D array of size m/TILE x p/TILE x TILE x TILE to write to
    *   m: rows of a / out
    *   n: columns of a / rows of b
-   *   p: coolumns of b / out
+   *   p: columns of b / out
    * 
    */
   /// BEGIN YOUR SOLUTION
+  
+  size_t m_size = M / TILE;
+  size_t n_size = N / TILE;
+  size_t p_size = P / TILE;
+
+  Fill(out, 0);
+
+  for(size_t m = 0, m_end = m_size; m < m_end; ++m) {
+    for(size_t p = 0, p_end = p_size; p < p_end; ++p) {
+      size_t out_idx = (m * p_size + p) * (TILE * TILE);
+      // std::cout << "calculating out->ptr[(" << m << ", " << p << ") -> " << out_idx << "]..." << std::endl;
+
+      // reduction along N:
+      for(size_t n = 0, n_end = n_size; n < n_end; ++n) {
+        size_t a_idx = (m * n_size + n) * (TILE * TILE);
+        size_t b_idx = (n * p_size + p) * (TILE * TILE);
+        // std::cout << "\tmultiplying tiles a.ptr[(" << m << ", " << n << ") -> " << a_idx 
+        //           <<                 "] * b.ptr[(" << n << ", " << p << ") -> " << b_idx << "]" << std::endl;
+        AlignedDot(&a.ptr[a_idx], &b.ptr[b_idx], &out->ptr[out_idx]);
+      }
+    }
+  }
   
   /// END YOUR SOLUTION
 }
@@ -231,11 +531,19 @@ void ReduceMax(const AlignedArray& a, AlignedArray* out, size_t reduce_size) {
    * Args:
    *   a: compact array of size a.size = out.size * reduce_size to reduce over
    *   out: compact array to write into
-   *   redice_size: size of the dimension to reduce over
+   *   reduce_size: size of the dimension to reduce over
    */
 
   /// BEGIN YOUR SOLUTION
-  
+  assert(reduce_size > 1 && "reduce_size assumed to be greater than 1");
+  size_t in_idx = 0;
+  for (size_t out_idx = 0; out_idx < out->size; ++out_idx) {
+    scalar_t out_val = a.ptr[in_idx];
+    for (size_t reduce_idx = 0; reduce_idx < reduce_size; ++reduce_idx) {
+      out_val = std::max(out_val, a.ptr[in_idx++]);
+    }
+    out->ptr[out_idx] = out_val;
+  }
   /// END YOUR SOLUTION
 }
 
@@ -246,11 +554,19 @@ void ReduceSum(const AlignedArray& a, AlignedArray* out, size_t reduce_size) {
    * Args:
    *   a: compact array of size a.size = out.size * reduce_size to reduce over
    *   out: compact array to write into
-   *   redice_size: size of the dimension to reduce over
+   *   reduce_size: size of the dimension to reduce over
    */
 
   /// BEGIN YOUR SOLUTION
-  
+  assert(reduce_size > 1 && "reduce_size assumed to be greater than 1");
+  size_t in_idx = 0;
+  for (size_t out_idx = 0; out_idx < out->size; ++out_idx) {
+    scalar_t out_val = 0;
+    for (size_t reduce_idx = 0; reduce_idx < reduce_size; ++reduce_idx) {
+      out_val += a.ptr[in_idx++];
+    }
+    out->ptr[out_idx] = out_val;
+  }
   /// END YOUR SOLUTION
 }
 
