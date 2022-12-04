@@ -246,7 +246,8 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_strides = NDArray.compact_strides(new_shape)
+        return self.as_strided(new_shape, new_strides)
         ### END YOUR SOLUTION
 
     def permute(self, new_axes):
@@ -271,7 +272,14 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        # old_axes = range(len(self._shape))
+        old_shape = self._shape
+        old_strides = self._strides
+        new_shape = tuple([old_shape[i] for i in new_axes])
+        new_strides = tuple([old_strides[i] for i in new_axes])
+        return self.as_strided(shape=new_shape, strides=new_strides)
+
+        # raise NotImplementedError()
         ### END YOUR SOLUTION
 
     def broadcast_to(self, new_shape):
@@ -361,7 +369,44 @@ class NDArray:
         assert len(idxs) == self.ndim, "Need indexes equal to number of dimensions"
 
         ### BEGIN YOUR SOLUTION
+
+        old_shape = self._shape
+        old_strides = self._strides
+        old_offset = self._offset
+        # print(f"{old_shape=}")
+        # print(f"{old_strides=}")
+        # print(f"{old_offset=}")
+        new_shape = []
+        new_strides = []
+        new_offset = old_offset
+        for axis_idx, (axis_slice, old_size, old_stride) in reversed(list(enumerate(zip(idxs, old_shape, old_strides)))):
+            axis_start = axis_slice.start
+            axis_stop = axis_slice.stop
+            axis_step = axis_slice.step
+            new_size = ((axis_stop - axis_start - 1) // axis_step) + 1
+            new_stride = (axis_step * old_stride)
+            new_offset += (axis_start * old_stride)
+            new_shape.append(new_size)
+            new_strides.append(new_stride)
+            # print(f"{axis_idx=}, {axis_slice=}, {old_size=}, {old_stride=} -> {new_size=}, {new_stride=}, {new_offset=}")
+        
+        new_shape = list(reversed(new_shape))
+        new_strides = list(reversed(new_strides))
+
+        # print(f"{new_shape=}")
+        # print(f"{new_strides=}")
+        # print(f"{new_offset=}")
+
+        return NDArray.make(
+            shape=new_shape, 
+            strides=new_strides, 
+            device=self.device, 
+            handle=self._handle, 
+            offset=new_offset
+        )
+
         raise NotImplementedError()
+
         ### END YOUR SOLUTION
 
     def __setitem__(self, idxs, other):

@@ -558,7 +558,7 @@ void ReduceSum(const AlignedArray& a, AlignedArray* out, size_t reduce_size) {
    */
 
   /// BEGIN YOUR SOLUTION
-  assert(reduce_size > 1 && "reduce_size assumed to be greater than 1");
+  assert(reduce_size >= 1 && "reduce_size assumed to be greater than 1");
   size_t in_idx = 0;
   for (size_t out_idx = 0; out_idx < out->size; ++out_idx) {
     scalar_t out_val = 0;
