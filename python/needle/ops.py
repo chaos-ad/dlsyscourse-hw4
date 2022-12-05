@@ -207,7 +207,7 @@ class Transpose(TensorOp):
         (swap1, swap2) = self.axes if self.axes is not None else (dims-1, dims-2)
         new_axes = list(range(dims))
         new_axes[swap1], new_axes[swap2] = new_axes[swap2], new_axes[swap1]
-        return array_api.transpose(a, axes=new_axes)
+        return array_api.permute(a, new_axes)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -407,11 +407,11 @@ class LogSumExp(TensorOp):
     def compute(self, Z):
         ### BEGIN YOUR SOLUTION
          # Keepdims makes broadcast work along right axes
-        Z_max = array_api.amax(Z, axis=self.axes)
+        Z_max = array_api.max(Z, axis=self.axes)
         Z_max_reshaped = array_api.reshape(Z_max, get_padded_shape(Z.shape, self.axes))
         Z_max_broadcasted = array_api.broadcast_to(Z_max_reshaped, Z.shape)
         Z_sub = Z - Z_max_broadcasted
-        result = array_api.log(array_api.sum(array_api.exp(Z_sub), axis=self.axes))
+        result = array_api.log(array_api.summation(array_api.exp(Z_sub), axis=self.axes))
         result += Z_max
         return result
         ### END YOUR SOLUTION
@@ -419,7 +419,7 @@ class LogSumExp(TensorOp):
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
         Z = node.inputs[0]
-        Z_max = array_api.amax(Z.numpy(), axis=self.axes)
+        Z_max = array_api.max(Z.numpy(), axis=self.axes)
         Z_max_reshaped = array_api.reshape(Z_max, get_padded_shape(Z.shape, self.axes))
         Z_max_broadcasted = array_api.broadcast_to(Z_max_reshaped, Z.shape)
         Z_sub = Z - Tensor(Z_max_broadcasted)
@@ -441,12 +441,15 @@ def logsumexp(a, axes=None):
 class Tanh(TensorOp):
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return Tensor(array_api.tanh(a))
+        return array_api.tanh(a)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        x = node.inputs[0]
+        y = exp(-x) + exp(x)
+        z = mul_scalar(power_scalar(y, -2), 4)
+        return out_grad * z
         ### END YOUR SOLUTION
 
 
@@ -466,13 +469,23 @@ class Stack(TensorOp):
 
     def compute(self, args):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        in_shape = args[0].shape
+        out_shape = [len(args)] + list(in_shape)
+        out = NDArray.make(out_shape, device=args[0].device)
+        idxs = [slice(None, None, None) for j in range(len(in_shape))]
+        for i, arg in enumerate(args):
+            assert arg.shape == in_shape
+            idxs_i = tuple([i] + idxs)
+            out[idxs_i] = arg.compact()
+        out_axes = list(range(1, len(out_shape)))
+        out_axes.insert(self.axis, 0)
+        return array_api.permute(out, tuple(out_axes)).compact()
         ### END YOUR SOLUTION
 
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return split(out_grad, self.axis)
         ### END YOUR SOLUTION
 
 
@@ -492,12 +505,23 @@ class Split(TensorTupleOp):
 
     def compute(self, A):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        in_shape = A.shape
+        idx = [slice(None, None, None) for j in range(len(in_shape))]
+        results = []
+        for i in range(in_shape[self.axis]):
+            idx_i = idx.copy()
+            idx_i[self.axis] = i
+            idx_i = tuple(idx_i)
+            out = A[idx_i]
+            # TODO: since it's a fake reduction, can I just drop the 1-dimension?
+            out = array_api.summation(out, axis=self.axis)
+            results.append(out)
+        return tuple(results)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return stack(out_grad, self.axis)
         ### END YOUR SOLUTION
 
 
