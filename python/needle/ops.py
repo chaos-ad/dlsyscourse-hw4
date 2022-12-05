@@ -418,11 +418,11 @@ class LogSumExp(TensorOp):
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        Z = node.inputs[0]
-        Z_max = array_api.max(Z.numpy(), axis=self.axes)
+        Z = node.inputs[0].realize_cached_data()
+        Z_max = array_api.max(Z, axis=self.axes)
         Z_max_reshaped = array_api.reshape(Z_max, get_padded_shape(Z.shape, self.axes))
         Z_max_broadcasted = array_api.broadcast_to(Z_max_reshaped, Z.shape)
-        Z_sub = Z - Tensor(Z_max_broadcasted)
+        Z_sub = Tensor(Z - Z_max_broadcasted, device=node.inputs[0].device)
         Z_exp = exp(Z_sub)
         Z_norm = summation(Z_exp, axes=self.axes)
         Z_norm_reshaped = reshape(Z_norm, get_padded_shape(Z.shape, self.axes))
@@ -430,7 +430,8 @@ class LogSumExp(TensorOp):
         Z_norm = Z_exp / Z_norm_broadcasted
         out_grad_reshaped = reshape(out_grad, get_padded_shape(Z.shape, self.axes))
         out_grad_broadcasted = broadcast_to(out_grad_reshaped, Z.shape)
-        return out_grad_broadcasted * Z_norm
+        result = out_grad_broadcasted * Z_norm
+        return result
         ### END YOUR SOLUTION
 
 
