@@ -111,15 +111,15 @@ size_t GetSparseIdx(
     size_t sparse_offset,
     CudaVec const& sparse_strides) {
 
-  size_t sparse_idx = sparse_offset;
+  int32_t sparse_idx = static_cast<int32_t>(sparse_offset);
   size_t size = compact_strides.size;
   for(size_t i = 0; i < size; ++i) {
-    int32_t compact_stride = compact_strides.data[i];
-    int32_t sparse_pos = compact_idx / compact_stride;
+    int32_t sparse_pos = static_cast<int32_t>(compact_idx) / compact_strides.data[i];
     sparse_idx += sparse_pos * sparse_strides.data[i];
-    compact_idx %= compact_stride;
+    compact_idx %= compact_strides.data[i];
   }
-  return sparse_idx;
+  assert(sparse_idx >= 0 && "negative strides error");
+  return static_cast<size_t>(sparse_idx);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -44,28 +44,6 @@ void Fill(AlignedArray* out, scalar_t val) {
   }
 }
 
-void IncrementMultiIndex(std::vector<std::size_t> * index_ptr, std::vector<uint32_t> const& shape) {
-  assert(index_ptr && "index is null");
-  std::vector<std::size_t> & index = *index_ptr;
-  // TODO: ugly int64_t to avoid underflow, refactor me
-  for(int64_t i = shape.size() - 1; i >= 0; --i) {
-    if(index.at(i) < shape.at(i) - 1) {
-        index[i] += 1;
-        break;
-    } else {
-      index.at(i) = 0;
-    }
-  }
-}
-
-std::size_t MultiIndexToFlatIndex(std::vector<std::size_t> const& index, std::vector<uint32_t> const& strides, uint32_t offset) {
-  std::size_t result = offset;
-  for(std::size_t dim = 0, dim_end = index.size(); dim < dim_end; ++dim) {
-    result += (index[dim] * strides[dim]);
-  }
-  return result;
-}
-
 template <typename T>
 std::string ArrayToString(std::vector<T> const& index) {
   std::ostringstream out;
@@ -93,7 +71,6 @@ std::string ArrayToString(AlignedArray const& index) {
   return out.str();
 }
 
-
 std::vector<uint32_t> GetCompactStrides(std::vector<uint32_t> const& shape) {
   std::vector<uint32_t> result(shape.size(), 0);
   uint32_t multiple = 1;
@@ -113,42 +90,21 @@ size_t GetSparseIdx(
     size_t compact_idx,
     std::vector<uint32_t> const& compact_strides,
     size_t sparse_offset,
-    std::vector<uint32_t> const& sparse_strides
+    std::vector<int32_t> const& sparse_strides
 ) {
-  // std::cout << "DEBUG[Compact]: GetSparseIdx("
-  //           << "compact_idx=" << compact_idx << ", "
-  //           << "compact_strides=" << ArrayToString(compact_strides) << ", "
-  //           << "sparse_offset=" << sparse_offset << ", "
-  //           << "sparse_strides=" << ArrayToString(sparse_strides) << "):"
-  //           << std::endl;
-  size_t sparse_idx = sparse_offset;
+  int32_t sparse_idx = static_cast<int32_t>(sparse_offset);
   size_t size = compact_strides.size();
   for(size_t i = 0; i < size; ++i) {
-    uint32_t compact_stride = compact_strides[i];
-    uint32_t sparse_pos = compact_idx / compact_stride;
-    sparse_idx += sparse_pos * sparse_strides[i];
-    compact_idx %= compact_stride;
-    // std::cout << "DEBUG[Compact:GetSparseIdx]: step " << i << ": "
-    //           << "compact_strides[" << i << "]=" << compact_strides[i] << ", "
-    //           << "sparse_strides[" << i << "]=" << sparse_strides[i] << ", "
-    //           << "sparse_pos=" << sparse_pos << ", "
-    //           << "sparse_idx=" << sparse_idx << ", "
-    //           << "compact_idx=" << compact_idx
-    //           << std::endl;
-
+    int32_t sparse_pos = static_cast<int32_t>(compact_idx / compact_strides[i]);
+    sparse_idx += (sparse_pos * sparse_strides[i]);
+    compact_idx %= compact_strides[i];
   }
-  // std::cout << "DEBUG[Compact]: GetSparseIdx("
-  //           << "compact_idx=" << compact_idx << ", "
-  //           << "compact_strides=" << ArrayToString(compact_strides) << ", "
-  //           << "sparse_offset=" << sparse_offset << ", "
-  //           << "sparse_strides=" << ArrayToString(sparse_strides) << ") -> "
-  //           << sparse_idx
-  //           << std::endl;
-  return sparse_idx;
+  assert(sparse_idx >= 0 && "negative strides error");
+  return static_cast<size_t>(sparse_idx);
 }
 
 void Compact(AlignedArray const& a, AlignedArray* out, std::vector<uint32_t> shape,
-             std::vector<uint32_t> in_strides, size_t in_offset) {
+             std::vector<int32_t> in_strides, size_t in_offset) {
   /**
    * Compact an array in memory
    * 
@@ -174,6 +130,8 @@ void Compact(AlignedArray const& a, AlignedArray* out, std::vector<uint32_t> sha
   std::vector<uint32_t> out_strides = GetCompactStrides(shape);
 
   // std::cout << "DEBUG[Compact]: output.strides = " << ArrayToString(out_strides) << std::endl;
+  // std::cout << "DEBUG[Compact]: input.strides = " << ArrayToString(out_strides) << std::endl;
+  // std::cout << "DEBUG[Compact]: input.offset = " << in_offset << std::endl;
 
   size_t size = out->size;
   for(size_t out_idx = 0; out_idx < size; ++out_idx) {
@@ -186,7 +144,7 @@ void Compact(AlignedArray const& a, AlignedArray* out, std::vector<uint32_t> sha
 }
 
 void EwiseSetitem(const AlignedArray& in, AlignedArray* out, std::vector<uint32_t> shape,
-                  std::vector<uint32_t> out_strides, size_t out_offset) {
+                  std::vector<int32_t> out_strides, size_t out_offset) {
   /**
    * Set items in a (non-compact) array
    * 
@@ -214,7 +172,7 @@ void EwiseSetitem(const AlignedArray& in, AlignedArray* out, std::vector<uint32_
 }
 
 void ScalarSetitem(const size_t size, scalar_t val, AlignedArray* out, std::vector<uint32_t> shape,
-                   std::vector<uint32_t> out_strides, size_t out_offset) {
+                   std::vector<int32_t> out_strides, size_t out_offset) {
   /**
    * Set items is a (non-compact) array
    * 

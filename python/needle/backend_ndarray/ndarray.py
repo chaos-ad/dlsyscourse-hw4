@@ -622,7 +622,22 @@ class NDArray:
         Note: compact() before returning.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        new_offset = 0
+        new_strides = []
+        for dim_idx, (dim_stride, dim_shape) in enumerate(zip(self._strides, self._shape)):
+            if dim_idx in axes:
+                new_strides.append(-dim_stride)
+                new_offset += (dim_shape - 1) * dim_stride
+            else:
+                new_strides.append(dim_stride)
+        
+        return NDArray.make(
+            shape=self._shape, 
+            strides=new_strides, 
+            device=self.device, 
+            handle=self._handle, 
+            offset=new_offset
+        ).compact()
         ### END YOUR SOLUTION
 
 
