@@ -648,7 +648,16 @@ class NDArray:
         axes = ( (0, 0), (1, 1), (0, 0)) pads the middle axis with a 0 on the left and right side.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        view_idxs = []
+        new_shape = []
+        old_shape = self._shape
+        for dim_idx, (cur_dim_size, (pad_before, pad_after)) in enumerate(zip(old_shape, list(axes))):
+            new_shape.append(cur_dim_size + pad_before + pad_after)
+            view_idxs.append(slice(pad_before, cur_dim_size + pad_before, 1))        
+        result = NDArray.make(new_shape, device=self.device)
+        result.fill(0)
+        result[tuple(view_idxs)] = self
+        return result
         ### END YOUR SOLUTION
 
 

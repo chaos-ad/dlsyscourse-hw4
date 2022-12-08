@@ -557,12 +557,46 @@ class Dilate(TensorOp):
 
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        view_idxs = []
+        new_shape = []
+        old_shape = a.shape
+        for dim_idx, cur_dim_size in enumerate(old_shape):
+            if dim_idx in self.axes:
+                new_dim_size = cur_dim_size * (1 + self.dilation)
+                new_shape.append(new_dim_size)
+                view_idxs.append(slice(0, new_dim_size, 1 + self.dilation))
+            else:
+                new_shape.append(cur_dim_size)
+                view_idxs.append(slice(0, cur_dim_size, 1))
+
+        # print(f"{new_shape=}, {view_idxs=}")
+
+        result = NDArray.make(new_shape, device=a.device)
+        result.fill(0)
+        result[tuple(view_idxs)] = a
+        return result
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        view_idxs = []
+        new_shape = []
+        cur_shape = out_grad.shape
+        for dim_idx, cur_dim_size in enumerate(cur_shape):
+            if dim_idx in self.axes:
+                new_dim_size = cur_dim_size // (1 + self.dilation)
+                new_shape.append(new_dim_size)
+                view_idxs.append(slice(0, cur_dim_size, 1 + self.dilation))
+            else:
+                new_shape.append(cur_dim_size)
+                view_idxs.append(slice(0, cur_dim_size, 1))
+
+        # print(f"{new_shape=}, {view_idxs=}")
+
+        result = NDArray.make(new_shape, device=out_grad.device)
+        res_idxs = [slice(None, None, None) for _ in range(len(new_shape))]
+        result[tuple(res_idxs)] = out_grad.realize_cached_data()[tuple(view_idxs)]
+        return Tensor(result, device=out_grad.device)
         ### END YOUR SOLUTION
 
 

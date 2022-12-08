@@ -64,26 +64,12 @@ CudaVec VecToCuda(const std::vector<int32_t>& x) {
   return shape;
 }
 
-
 template <typename T>
 std::string ArrayToString(std::vector<T> const& index) {
   std::ostringstream out;
   out << "(";
   for(std::size_t dim = 0, dim_end = index.size(); dim < dim_end; ++dim) {
     out << index[dim];
-    if(dim < dim_end - 1) {
-      out << ", ";
-    }
-  }
-  out << ")";
-  return out.str();
-}
-
-std::string CudaVecToString(CudaVec const& index) {
-  std::ostringstream out;
-  out << "(";
-  for(std::size_t dim = 0, dim_end = index.size; dim < dim_end; ++dim) {
-    out << index.data[dim];
     if(dim < dim_end - 1) {
       out << ", ";
     }
@@ -105,7 +91,7 @@ CudaVec GetCompactStrides(std::vector<int32_t> const& shape) {
   return result;
 }
 
-size_t GetSparseIdx(
+__device__ size_t GetSparseIdx(
     size_t compact_idx,
     CudaVec const& compact_strides,
     size_t sparse_offset,
@@ -162,25 +148,10 @@ __global__ void CompactKernel(const scalar_t* in, scalar_t* out, size_t size, Cu
   if (gid < size) {
     // 'in' is sparse, 'out' is compact, and we're always iterating over the compact indexes:
     size_t out_idx = gid;
-    size_t sparse_offset = in_offset;
-    CudaVec & sparse_strides = in_strides;
-    CudaVec & compact_strides = out_strides;
-
-    // compact-to-sparse conversion:
-    size_t compact_idx = out_idx;
-    size_t sparse_idx = sparse_offset;
-    for(size_t dim_idx = 0; dim_idx < sparse_strides.size; ++dim_idx) {
-      int32_t compact_stride = compact_strides.data[dim_idx];
-      int32_t sparse_pos = compact_idx / compact_stride;
-      sparse_idx += sparse_pos * sparse_strides.data[dim_idx];
-      compact_idx %= compact_stride;
-    }
-    
-    // in is sparse one here:
-    size_t in_idx = sparse_idx;
-    out[out_idx] = in[in_idx];
+    size_t in_idx = GetSparseIdx(out_idx, out_strides, in_offset, in_strides);
     // printf("DEBUG[CompactKernel]: setting out[%lu]=in[%lu]=%f\n", 
     //   (long unsigned)out_idx, (long unsigned)in_idx, (float)in[in_idx]);
+    out[out_idx] = in[in_idx];
   }
 
   /// END YOUR SOLUTION
@@ -217,21 +188,7 @@ __global__ void EwiseSetitemKernel(const scalar_t* in, scalar_t* out, size_t siz
   if (gid < size) {
     // 'in' is compact, 'out' is sparse, and we're always iterating over the compact indexes:
     size_t in_idx = gid;
-    size_t sparse_offset = out_offset;
-    CudaVec & sparse_strides = out_strides;
-    CudaVec & compact_strides = in_strides;
-
-    // compact-to-sparse conversion:
-    size_t compact_idx = in_idx;
-    size_t sparse_idx = sparse_offset;
-    for(size_t dim_idx = 0; dim_idx < compact_strides.size; ++dim_idx) {
-      int32_t compact_stride = compact_strides.data[dim_idx];
-      int32_t sparse_pos = compact_idx / compact_stride;
-      sparse_idx += sparse_pos * sparse_strides.data[dim_idx];
-      compact_idx %= compact_stride;
-    }
-  
-    size_t out_idx = sparse_idx;
+    size_t out_idx = GetSparseIdx(in_idx, in_strides, out_offset, out_strides);
     out[out_idx] = in[in_idx];
     // printf("DEBUG[EwiseSetitemKernel]: setting out[%lu]=in[%lu]=%f\n", 
     //   (unsigned long)out_idx, (unsigned long)in_idx, (float)in[in_idx]);
@@ -275,22 +232,7 @@ __global__ void ScalarSetitemKernel(scalar_t val, scalar_t* out, size_t size, Cu
   if (gid < size) {
     // 'in' is a scalar here, 'out' is sparse, and we're always iterating over the compact indexes:
     size_t in_idx = gid;
-    size_t sparse_offset = out_offset;
-    CudaVec & sparse_strides = out_strides;
-    CudaVec & compact_strides = in_strides;
-
-    // compact-to-sparse conversion:
-    size_t compact_idx = in_idx;
-    size_t sparse_idx = sparse_offset;
-    for(size_t dim_idx = 0; dim_idx < compact_strides.size; ++dim_idx) {
-      int32_t compact_stride = compact_strides.data[dim_idx];
-      int32_t sparse_pos = compact_idx / compact_stride;
-      sparse_idx += sparse_pos * sparse_strides.data[dim_idx];
-      compact_idx %= compact_stride;
-    }
-
-    // 'out' is sparse one here:
-    size_t out_idx = sparse_idx;
+    size_t out_idx = GetSparseIdx(in_idx, in_strides, out_offset, out_strides);
     out[out_idx] = val;
     // printf("DEBUG[EwiseSetitemKernel]: setting out[%lu]=val=%f\n", (long unsigned)out_idx, val);
   }
