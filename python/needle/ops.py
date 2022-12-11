@@ -294,7 +294,13 @@ class Summation(TensorOp):
 
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return array_api.summation(a, axis=self.axes)
+        result = a
+        if isinstance(self.axes, (tuple, list)):
+            for axis in reversed(sorted(self.axes)):
+                result = array_api.summation(result, axis=axis)
+        else:
+            result = array_api.summation(result, axis=self.axes)
+        return result
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -568,9 +574,6 @@ class Dilate(TensorOp):
             else:
                 new_shape.append(cur_dim_size)
                 view_idxs.append(slice(0, cur_dim_size, 1))
-
-        # print(f"{new_shape=}, {view_idxs=}")
-
         result = NDArray.make(new_shape, device=a.device)
         result.fill(0)
         result[tuple(view_idxs)] = a
@@ -579,24 +582,7 @@ class Dilate(TensorOp):
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        view_idxs = []
-        new_shape = []
-        cur_shape = out_grad.shape
-        for dim_idx, cur_dim_size in enumerate(cur_shape):
-            if dim_idx in self.axes:
-                new_dim_size = cur_dim_size // (1 + self.dilation)
-                new_shape.append(new_dim_size)
-                view_idxs.append(slice(0, cur_dim_size, 1 + self.dilation))
-            else:
-                new_shape.append(cur_dim_size)
-                view_idxs.append(slice(0, cur_dim_size, 1))
-
-        # print(f"{new_shape=}, {view_idxs=}")
-
-        result = NDArray.make(new_shape, device=out_grad.device)
-        res_idxs = [slice(None, None, None) for _ in range(len(new_shape))]
-        result[tuple(res_idxs)] = out_grad.realize_cached_data()[tuple(view_idxs)]
-        return Tensor(result, device=out_grad.device)
+        return undilate(out_grad, axes=self.axes, dilation=self.dilation)
         ### END YOUR SOLUTION
 
 
@@ -610,12 +596,26 @@ class UnDilate(TensorOp):
 
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        view_idxs = []
+        new_shape = []
+        cur_shape = a.shape
+        for dim_idx, cur_dim_size in enumerate(cur_shape):
+            if dim_idx in self.axes:
+                new_dim_size = cur_dim_size // (1 + self.dilation)
+                new_shape.append(new_dim_size)
+                view_idxs.append(slice(0, cur_dim_size, 1 + self.dilation))
+            else:
+                new_shape.append(cur_dim_size)
+                view_idxs.append(slice(0, cur_dim_size, 1))
+        result = NDArray.make(new_shape, device=a.device)
+        res_idxs = [slice(None, None, None) for _ in range(len(new_shape))]
+        result[tuple(res_idxs)] = a[tuple(view_idxs)]
+        return result
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return dilate(out_grad, axes=self.axes, dilation=self.dilation)
         ### END YOUR SOLUTION
 
 
@@ -628,14 +628,97 @@ class Conv(TensorOp):
         self.stride = stride
         self.padding = padding
 
-    def compute(self, A, B):
+    ## Naive implementation:
+    # N, H_in, W_in, C_in = A.shape
+    # K, _, _, C_out = B.shape
+    # assert B.shape[0] == B.shape[1], "Conv supports only square kernels"
+    # assert B.shape[0] % 2 == 1, "Conv supports only odd-sized kernels"
+    # assert B.shape[2] == A.shape[3], "Input channels are of mismatched size"
+
+    # M = (K + 1) // 2 # margin of the kernel, the distance from center to the border
+    # H_out, W_out = (H_in - (M-1) * 2), (W_in - (M-1) * 2)
+    # output = NDArray.make(shape=(N, H_out, W_out, C_out), device=A.device)
+    # output.fill(0)
+
+    # for n in range(N):
+    #     for c_in in range(C_in):
+    #         for c_out in range(C_out):
+    #             for h_out in range(H_out):
+    #                 for w_out in range(W_out):
+
+    #                     ## Calculating convolution for out[h_out, w_out]:
+    #                     for h_kern in range(K):
+    #                         for w_kern in range(K):
+    #                             output[n,h_out,w_out,c_out] += A[n,h_out+h_kern,w_out+w_kern,c_in] * B[h_kern,w_kern,c_in,c_out]
+
+
+    # return output
+
+    def compute(self, X, W):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+
+        if self.padding > 0:
+            padding = ((0,0), (self.padding, self.padding), (self.padding, self.padding), (0, 0))
+            X = X.pad(padding)
+
+        N, H_in, W_in, C_in = X.shape
+        K, _, _, C_out = W.shape
+        H_out, W_out = (H_in - K) // self.stride + 1, (W_in - K) // self.stride + 1
+        
+        # assert self.padding == 0 or W.shape[0] % 2 == 1, "Conv with padding supports only odd-sized kernels"
+        assert W.shape[0] == W.shape[1], "Conv supports only square kernels"
+        assert W.shape[2] == X.shape[3], "Input channels are of mismatched size"
+
+        ## Calculating convolution with a single matmul via im2col trick:
+
+        S = self.stride
+        N_s, H_s, W_s, C_s = X.strides
+        X_im2col = X.as_strided(shape=(N, H_out, W_out, K, K, C_in), strides=(N_s, (H_s * S), (W_s * S), H_s, W_s, C_s))
+        X_im2col = X_im2col.compact().reshape((N * H_out * W_out, K * K * C_in)) ## compact uses extra O(K^2) memory
+        output = X_im2col @ W.compact().reshape((K * K * C_in, C_out))
+        output = output.reshape((N, H_out, W_out, C_out))
+        return output
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        X, W = node.inputs
+
+        N, H_in, W_in, C_in = X.shape
+        K, _, _, C_out = W.shape
+        
+        P = self.padding
+        # print(f"{X.shape=}")
+        # print(f"{W.shape=}")
+        # print(f"{out_grad.shape=}")
+        
+        if self.stride > 1:
+            out_grad_strided = dilate(out_grad, axes=(1,2), dilation=self.stride-1)
+        else:
+            out_grad_strided = out_grad
+        # print(f"{out_grad_strided.shape=}")
+        _, H_out, W_out, _ = out_grad_strided.shape
+
+        W_flipped = flip(W, axes=(0,1))
+        W_transposed = transpose(W_flipped, axes=(2,3))
+        # print(f"{W_transposed.shape=}")
+        X_grad_padding = K - P - 1
+        # print(f"{X_grad_padding=}")
+        X_grad = conv(out_grad_strided, W_transposed, stride=1, padding=X_grad_padding)
+        # print(f"{X_grad.shape=}")
+        
+        X_perm = transpose(X, axes=(3,0))
+        # print(f"{X_perm.shape=}")
+        out_grad_perm = transpose(transpose(out_grad_strided, axes=(0,1)), axes=(1,2))
+        # print(f"{out_grad_perm.shape=}")
+        X_perm_padding = (H_out - H_in + K - 1) // 2
+        # print(f"{X_perm_padding=}")
+        W_grad_perm = conv(X_perm, out_grad_perm, stride=1, padding=X_perm_padding)
+        # print(f"{W_grad_perm.shape=}")
+        W_grad = transpose(transpose(W_grad_perm, axes=(0,1)), axes=(1,2))
+        # print(f"{W_grad.shape=}")
+
+        return X_grad, W_grad
         ### END YOUR SOLUTION
 
 

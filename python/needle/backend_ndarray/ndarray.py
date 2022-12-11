@@ -246,7 +246,9 @@ class NDArray:
         """
 
         ### BEGIN YOUR SOLUTION
-        if prod(self._shape) != prod(new_shape) or not self.is_compact():
+        if prod(self._shape) != prod(new_shape):
+            raise ValueError("shape mismatch")
+        if not self.is_compact():
             raise ValueError("reshaping non-compact array")
 
         return self.as_strided(new_shape, self.compact_strides(new_shape))
