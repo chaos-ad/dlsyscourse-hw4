@@ -226,7 +226,7 @@ class Reshape(TensorOp):
 
     def compute(self, a):
         ### BEGIN YOUR SOLUTION
-        return array_api.reshape(a, self.shape)
+        return array_api.reshape(a.compact(), self.shape)
         ### END YOUR SOLUTION
 
     def gradient(self, out_grad, node):
@@ -397,9 +397,8 @@ class ReLU(TensorOp):
         ### BEGIN YOUR SOLUTION
         # ReLU is not twice-differentiable, so we will not need to use tensor ops here, just plain array_api
         output = node.realize_cached_data()
-        grads = array_api.zeros(output.shape)
-        grads[output > 0] = 1
-        return out_grad * Tensor(grads)
+        grads = (output > 1)
+        return out_grad * Tensor(grads, device=out_grad.device)
         ### END YOUR SOLUTION
 
 
@@ -547,7 +546,7 @@ class Flip(TensorOp):
 
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
-        return Tensor(out_grad.realize_cached_data().flip(self.axes))
+        return Tensor(out_grad.realize_cached_data().flip(self.axes), device=out_grad.device)
         ### END YOUR SOLUTION
 
 

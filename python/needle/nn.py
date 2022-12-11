@@ -157,7 +157,7 @@ class SoftmaxLoss(Module):
         Z = logits
         classes = logits.shape[-1]
         axes = tuple(list(range(1, len(Z.shape))))
-        y_one_hot = init.one_hot(classes, y)
+        y_one_hot = init.one_hot(classes, y, device=logits.device)
         Zy = ops.summation(ops.multiply(Z, y_one_hot), axes=axes)
         res = ops.logsumexp(Z, axes=axes) - Zy
         res = ops.divide_scalar(ops.summation(res), res.shape[0])
@@ -172,10 +172,10 @@ class BatchNorm1d(Module):
         self.eps = eps
         self.momentum = momentum
         ### BEGIN YOUR SOLUTION
-        self.weight = Parameter(init.ones(1, self.dim))
-        self.bias = Parameter(init.zeros(1, self.dim))
-        self.running_mean = init.zeros(self.dim)
-        self.running_var = init.ones(self.dim)
+        self.weight = Parameter(init.ones(1, self.dim, device=device))
+        self.bias = Parameter(init.zeros(1, self.dim, device=device))
+        self.running_mean = init.zeros(self.dim, device=device)
+        self.running_var = init.ones(self.dim, device=device)
         ### END YOUR SOLUTION
 
 
@@ -225,8 +225,8 @@ class LayerNorm1d(Module):
         self.dim = dim
         self.eps = eps
         ### BEGIN YOUR SOLUTION
-        self.weight = Parameter(init.ones(1, self.dim))
-        self.bias = Parameter(init.zeros(1, self.dim))
+        self.weight = Parameter(init.ones(1, self.dim, device=device))
+        self.bias = Parameter(init.zeros(1, self.dim, device=device))
         ### END YOUR SOLUTION
 
     def forward(self, X: Tensor) -> Tensor:
@@ -256,7 +256,7 @@ class Dropout(Module):
     def forward(self, X: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
         if self.training:
-            B = init.randb(*X.shape, p=(1-self.p))
+            B = init.randb(*X.shape, p=(1-self.p), device=X.device)
             X_norm = X / (1 - self.p)
             result = X_norm * B
         else:
