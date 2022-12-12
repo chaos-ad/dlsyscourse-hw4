@@ -123,7 +123,7 @@ class ReLU(Module):
 class Tanh(Module):
     def forward(self, x: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return ops.tanh(x)
         ### END YOUR SOLUTION
 
 
@@ -172,10 +172,10 @@ class BatchNorm1d(Module):
         self.eps = eps
         self.momentum = momentum
         ### BEGIN YOUR SOLUTION
-        self.weight = Parameter(init.ones(1, self.dim, device=device))
-        self.bias = Parameter(init.zeros(1, self.dim, device=device))
-        self.running_mean = init.zeros(self.dim, device=device)
-        self.running_var = init.ones(self.dim, device=device)
+        self.weight = Parameter(init.ones(1, self.dim, device=device, dtype=dtype))
+        self.bias = Parameter(init.zeros(1, self.dim, device=device, dtype=dtype))
+        self.running_mean = init.zeros(self.dim, device=device, dtype=dtype)
+        self.running_var = init.ones(self.dim, device=device, dtype=dtype)
         ### END YOUR SOLUTION
 
 
@@ -339,7 +339,19 @@ class RNNCell(Module):
         """
         super().__init__()
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        if nonlinearity == "tanh":
+            self.activation_fn = Tanh()
+        elif nonlinearity == "relu":
+            self.activation_fn = ReLU()
+        
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+
+        init_arg = math.sqrt(1/hidden_size)
+        self.W_ih = Parameter(init.rand(input_size, hidden_size, low=-init_arg, high=init_arg, device=device, dtype=dtype))
+        self.W_hh = Parameter(init.rand(hidden_size, hidden_size, low=-init_arg, high=init_arg, device=device, dtype=dtype))
+        self.bias_ih = Parameter(init.rand(hidden_size, low=-init_arg, high=init_arg, device=device, dtype=dtype)) if bias else None
+        self.bias_hh = Parameter(init.rand(hidden_size, low=-init_arg, high=init_arg, device=device, dtype=dtype)) if bias else None
         ### END YOUR SOLUTION
 
     def forward(self, X, h=None):
@@ -354,7 +366,21 @@ class RNNCell(Module):
             for each element in the batch.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        batch_size = X.shape[0]
+        h_in = h or init.zeros(batch_size, self.hidden_size, device=self.W_hh.device, dtype=self.W_hh.dtype)
+        
+        a = (h_in @ self.W_hh)
+        if self.bias_hh:
+            a += ops.broadcast_to(ops.reshape(self.bias_hh, shape=(1,self.hidden_size)), shape=a.shape)
+        
+        b = (X @ self.W_ih)
+        if self.bias_ih:
+            b += ops.broadcast_to(ops.reshape(self.bias_ih, shape=(1,self.hidden_size)), shape=b.shape)
+        
+        c = a + b
+        h_out = self.activation_fn(c)
+        
+        return h_out
         ### END YOUR SOLUTION
 
 
@@ -383,7 +409,19 @@ class RNN(Module):
         """
         super().__init__()
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.dtype = dtype
+        self.device = device
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.rnn_cells = [
+            RNNCell(
+                input_size if layer_idx == 0 else hidden_size, 
+                hidden_size, 
+                bias, 
+                nonlinearity, 
+                device, 
+                dtype
+            ) for layer_idx in range(num_layers)]
         ### END YOUR SOLUTION
 
     def forward(self, X, h0=None):
@@ -399,7 +437,26 @@ class RNN(Module):
         h_n of shape (num_layers, bs, hidden_size) containing the final hidden state for each element in the batch.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        
+        batch_size = X.shape[1]
+        h0 = h0 or init.zeros(self.num_layers, batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
+        h0 = list(ops.split(h0, axis=0))
+
+        h_t = h0
+        output = []
+        for t, X_t in enumerate(list(ops.split(X, axis=0))):
+            h_next = []
+            for layer_idx, h_l in enumerate(h_t):
+                # In a multi-layer RNN, the input x_t(l) of the l-th layer (l >= 2) is the hidden state h_t^(l-1) of the previous layer.
+                X_l = X_t if layer_idx == 0 else h
+                h = self.rnn_cells[layer_idx](X_l, h_l)
+                h_next.append(h)
+            output.append(h)
+            h_t = h_next
+
+        h_n = ops.stack(tuple(h_t), axis=0)
+        output = ops.stack(tuple(output), axis=0)
+        return output, h_n
         ### END YOUR SOLUTION
 
 

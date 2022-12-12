@@ -27,7 +27,7 @@ class SGD(Optimizer):
         for param_id, param in enumerate(self.params):
             grad = ndl.Tensor(param.grad.detach(), device=param.grad.device, dtype=param.dtype) # Gradient
             grad += self.weight_decay * param.data.detach() # L2 Regularization term
-            u_prev = self.u.get(param_id, ndl.init.zeros(*grad.shape, device=grad.device)) # Prev momentum
+            u_prev = self.u.get(param_id, ndl.init.zeros(*grad.shape, device=grad.device, dtype=grad.dtype)) # Prev momentum
             u_curr = (self.momentum * u_prev) + (1 - self.momentum) * grad # Curr momentum
             self.u[param_id] = u_curr.detach()
             param.data -= self.lr * u_curr.detach()
@@ -73,10 +73,10 @@ class Adam(Optimizer):
             grad += self.weight_decay * param.data.detach() # L2 Regularization term
             grad_sq = ndl.ops.power_scalar(grad, 2)
 
-            m_prev = self.m.get(param_id, ndl.init.zeros(*grad.shape, device=grad.device))
+            m_prev = self.m.get(param_id, ndl.init.zeros(*grad.shape, device=grad.device, dtype=grad.dtype))
             m_curr = self.beta1 * m_prev + (1 - self.beta1) * grad     # running avg of grad
 
-            v_prev = self.v.get(param_id, ndl.init.zeros(*grad.shape, device=grad.device))
+            v_prev = self.v.get(param_id, ndl.init.zeros(*grad.shape, device=grad.device, dtype=grad.dtype))
             v_curr = self.beta2 * v_prev + (1 - self.beta2) * grad_sq  # running avg of grad^2
 
             self.m[param_id] = m_curr.detach()

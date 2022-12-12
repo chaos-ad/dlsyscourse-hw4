@@ -397,7 +397,7 @@ class ReLU(TensorOp):
         ### BEGIN YOUR SOLUTION
         # ReLU is not twice-differentiable, so we will not need to use tensor ops here, just plain array_api
         output = node.realize_cached_data()
-        grads = (output > 1)
+        grads = (output > 0)
         return out_grad * Tensor(grads, device=out_grad.device)
         ### END YOUR SOLUTION
 

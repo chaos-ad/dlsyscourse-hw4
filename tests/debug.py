@@ -14,25 +14,27 @@ import needle.nn as nn
 def main():
     print(f"{os.getpid()=}")
 
-    a,b,k,s = 3,16,7,4
+    SEQ_LENGTHS = [1, 13]
+    NUM_LAYERS = [1, 2]
+    BATCH_SIZES = [1, 15]
+    INPUT_SIZES = [1, 11]
+    HIDDEN_SIZES = [1, 12]
+    BIAS = [True, False]
+    INIT_HIDDEN = [True, False]
+    NONLINEARITIES = ['tanh', 'relu']
+
+    seq_length = SEQ_LENGTHS[1]
+    num_layers = NUM_LAYERS[1]
+    batch_size = BATCH_SIZES[1]
+    input_size = INPUT_SIZES[1]
+    hidden_size = HIDDEN_SIZES[1]
+    bias = BIAS[0]
+    init_hidden = INIT_HIDDEN[1]
+    nonlinearity = NONLINEARITIES[1]
     device = ndl.cpu()
-    np.random.seed(0)
-    a = nn.Conv(a, b, k, stride=s, bias=True, device=device)
-    b = nn.BatchNorm2d(dim=b, device=device)
-    c = nn.ReLU()
 
-    _A = np.random.randn(2, 3, 32, 32)
-    A = ndl.Tensor(_A, device=device)
-    y0 = A
-    y1 = a(y0)
-    y2 = b(y1)
-    y3 = c(y2)
-    y = y3
-
-    assert np.linalg.norm(np.array([[-1.8912625 ,  0.64833605,  1.9400386 ,  1.1435282 ,  1.89777   ,
-         2.9039745 , -0.10433993,  0.35458302, -0.5684191 ,  2.6178317 ],
-       [-0.2905612 , -0.4147861 ,  0.90268034,  0.46530387,  1.3335679 ,
-         1.8534894 , -0.1867125 , -2.4298222 , -0.5344223 ,  4.362149  ]]) - y.numpy()) < 1e-2
+    import test_sequence_models
+    test_sequence_models.test_rnn(seq_length, num_layers, batch_size, input_size, hidden_size, bias, init_hidden, nonlinearity, device)
 
 if __name__ == '__main__':
     main()
