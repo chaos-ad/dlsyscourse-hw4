@@ -100,7 +100,54 @@ def epoch_general_ptb(data, model, seq_len=40, loss_fn=nn.SoftmaxLoss(), opt=Non
     """
     np.random.seed(4)
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    
+    assert clip is None
+
+    total_loss = 0
+    total_errors = 0
+    total_batches = 0
+    total_examples = 0
+
+    if opt:
+        model.train()
+    else:
+        model.eval()
+
+    state = None
+    for batch_id in range(0, len(data)-1, seq_len):
+        X, y = ndl.data.get_batch(data, batch_id, seq_len, device=device, dtype=dtype)
+
+        if opt:
+            print(f"TRAIN: {batch_id=}, {X.shape=}, {y.shape=}")
+            opt.reset_grad()
+            out, state = model(X, state)
+            loss = loss_fn(out, y)
+            loss.backward()
+            opt.step()
+            if isinstance(state, tuple):
+                state = tuple([s.data for s in list(state)])
+            else:
+                state = state.data
+        else:
+            print(f"EVAL: {batch_id=}, {X.shape=}, {y.shape=}")
+            out, state = model(X, state)
+            loss = loss_fn(out, y)
+
+        y_prob = out.numpy()
+        y_pred = np.argmax(y_prob, axis=1)
+        errors = np.not_equal(y_pred, y.numpy()).sum()
+
+        total_loss += loss.numpy()
+        total_errors += errors
+        total_batches += 1
+        total_examples += y.shape[0]
+
+    # print(f"{total_loss=}, {total_errors=}, {total_batches=}, {total_examples=}")
+    avg_loss = total_loss / total_batches
+    avg_error_rate = total_errors / total_examples
+    return (avg_error_rate, avg_loss)
+
+
     ### END YOUR SOLUTION
 
 
@@ -127,7 +174,14 @@ def train_ptb(model, data, seq_len=40, n_epochs=1, optimizer=ndl.optim.SGD,
     """
     np.random.seed(4)
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    
+    opt = optimizer(model.parameters(), lr=lr, weight_decay=weight_decay)
+    loss_fn = loss_fn()
+    for epoch_id in range(n_epochs):
+        error, loss = epoch_general_ptb(data, model, seq_len, loss_fn, opt=opt, clip=clip, device=device, dtype=dtype)
+        print(f"TRAIN[{epoch_id=}]: {error=}, {loss=}")
+    return (error, loss)
+
     ### END YOUR SOLUTION
 
 
@@ -148,7 +202,10 @@ def evaluate_ptb(model, data, seq_len=40, loss_fn=nn.SoftmaxLoss,
     """
     np.random.seed(4)
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    loss_fn = loss_fn()
+    error, loss = epoch_general_ptb(data, model, seq_len, loss_fn, device=device, dtype=dtype)
+    print(f"TEST: {error=}, {loss=}")
+    return (error, loss)
     ### END YOUR SOLUTION
 
 

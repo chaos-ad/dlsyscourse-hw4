@@ -187,11 +187,18 @@ class DataLoader:
             self.ordering = np.array_split(
                 np.arange(len(dataset)), range(batch_size, len(dataset), batch_size)
             )
+        # else:
+        #     # print("DEBUG[__init__]: Reshuffling data...")
+        #     ordering = np.arange(len(self.dataset))
+        #     np.random.shuffle(ordering)
+        #     batch_ranges = range(self.batch_size, len(self.dataset), self.batch_size)
+        #     self.ordering = np.array_split(ordering, batch_ranges)
 
     def __iter__(self):
         ### BEGIN YOUR SOLUTION
         self.batch_idx = 0
         if self.shuffle:
+            # print("DEBUG[__iter__]: Reshuffling data...")
             ordering = np.arange(len(self.dataset))
             np.random.shuffle(ordering)
             batch_ranges = range(self.batch_size, len(self.dataset), self.batch_size)
@@ -353,7 +360,12 @@ class Dictionary(object):
         Returns the word's unique ID.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        word_idx = self.word2idx.get(word, None)
+        if word_idx is None:
+            word_idx = len(self.idx2word)
+            self.idx2word.append(word)
+            self.word2idx[word] = word_idx
+        return word_idx
         ### END YOUR SOLUTION
 
     def __len__(self):
@@ -361,7 +373,7 @@ class Dictionary(object):
         Returns the number of unique words in the dictionary.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return len(self.idx2word)
         ### END YOUR SOLUTION
 
 
@@ -388,7 +400,21 @@ class Corpus(object):
         ids: List of ids
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        eos_id = self.dictionary.add_word('<eos>')
+        cur_line = 0
+        result = []
+        with open(path, 'rb') as file:
+            for line in file.readlines():
+                # print(f"line[{cur_line}]: {line=}")
+                for word in line.split():
+                    word_id = self.dictionary.add_word(word)
+                    # print(f"\tgetting word id for {word} -> {word_id=}")
+                    result.append(word_id)
+                result.append(eos_id)
+                cur_line += 1
+                if max_lines and cur_line >= max_lines:
+                    break
+        return result
         ### END YOUR SOLUTION
 
 
@@ -409,7 +435,12 @@ def batchify(data, batch_size, device, dtype):
     Returns the data as a numpy array of shape (nbatch, batch_size).
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+    nbatch = len(data) // batch_size
+    last_idx = nbatch * batch_size
+    data_subset = data[:last_idx]
+    data_subset_np = np.array(data_subset, dtype=dtype)
+    data_subset_np = data_subset_np.reshape((batch_size, nbatch)).T
+    return data_subset_np
     ### END YOUR SOLUTION
 
 
@@ -433,5 +464,19 @@ def get_batch(batches, i, bptt, device=None, dtype=None):
     target - Tensor of shape (bptt*bs,) with cached data as NDArray
     """
     ### BEGIN YOUR SOLUTION
-    raise NotImplementedError()
+
+    rem_len = len(batches) - i
+    rem_bptt = min(bptt+1, rem_len)-1
+    assert(rem_bptt >= 2)
+
+    data_i = i
+    data_j = i + rem_bptt
+    target_i = i + 1
+    target_j = i + rem_bptt + 1
+
+    data_np = batches[data_i:data_j, :]
+    target_np = batches[target_i:target_j, :]
+    data_t = Tensor(data_np, device=device, dtype=dtype, requires_grad=False)
+    target_t = Tensor(target_np.flatten(), device=device, dtype=dtype, requires_grad=False)
+    return data_t, target_t
     ### END YOUR SOLUTION

@@ -89,7 +89,7 @@ def test_lstm_cell(batch_size, input_size, hidden_size, bias, init_hidden, devic
     if init_hidden:
         h, c = model(ndl.Tensor(x, device=device), (ndl.Tensor(h0, device=device), ndl.Tensor(c0, device=device)))
     else:
-        h, c = model(ndl.Tensor(x, device=device), None)
+        h, c = model(ndl.Tensor(x, device=device), None)   
     np.testing.assert_allclose(h_.detach().numpy(), h.numpy(), atol=1e-5, rtol=1e-5)
     np.testing.assert_allclose(c_.detach().numpy(), c.numpy(), atol=1e-5, rtol=1e-5)
 
@@ -347,10 +347,13 @@ def submit_language_model():
         output, h_ = model(ndl.Tensor(x, device=device), h)
         if seq_model == 'lstm':
             h0_, c0_ = h_
+            print(f"DEBUG[language_model]@1: submitting {c0_.numpy()=}")
             mugrade_submit(c0_.numpy())
         elif seq_model == 'rnn':
             h0_ = h_
+        print(f"DEBUG[language_model]@2: submitting {h0_.numpy()=}")
         mugrade_submit(h0_.numpy())
+        print(f"DEBUG[language_model]@3: submitting {output.numpy()=}")
         mugrade_submit(output.numpy())
 
     device = ndl.cpu() # TODO CHANGE BACK
@@ -368,7 +371,9 @@ def submit_language_model():
         seq_model=seq_model, device=device)
     train_acc, train_loss = train_ptb(model, train_data, seq_len=seq_len, n_epochs=n_epochs, device=device)
     test_acc, test_loss = evaluate_ptb(model, train_data, seq_len=seq_len, device=device)
+    print(f"DEBUG[language_model]@4: submitting {train_loss=}")
     mugrade_submit(train_loss)
+    print(f"DEBUG[language_model]@5: submitting {test_loss=}")
     mugrade_submit(test_loss)
 
 

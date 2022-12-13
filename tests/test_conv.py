@@ -660,7 +660,9 @@ def submit_resnet9():
     np.random.seed(1)
     model = ResNet9(device=device)
 
-    MugradeSubmit(ndl.Tensor(num_params(model)))
+    par = ndl.Tensor(num_params(model))
+    print(f"SUBMITTING[submit_resnet9, 1]: {par}")
+    MugradeSubmit(par)
 
     np.random.seed(1)
     dataset = ndl.data.CIFAR10Dataset("./data/cifar-10-batches-py", train=True)
@@ -672,7 +674,10 @@ def submit_resnet9():
     np.random.seed(1)
     model = ResNet9(device=device, dtype="float32")
     out = one_iter_of_cifar10_training(dataloader, model, niter=2, opt=ndl.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0001), device=device)
-    MugradeSubmit(ndl.Tensor(list(out)))
+    
+    res = ndl.Tensor(list(out))
+    print(f"SUBMITTING[submit_resnet9, 2]: {res}")
+    MugradeSubmit(res)
 
 
 if __name__ == "__main__":

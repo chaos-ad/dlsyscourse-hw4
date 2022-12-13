@@ -112,8 +112,11 @@ def submit_ptb():
             else:
                 data = ndl.data.batchify(corpus.test, batch_size, device=device, dtype="float32")
             X, y = ndl.data.get_batch(data, np.random.randint(len(data)), bptt)
+            print(f"DEBUG[PTB]: Submitting {np.array(len(data))=}")
             mugrade_submit(np.array(len(data)))
+            print(f"DEBUG[PTB]: Submitting {X.numpy()[0, :]=}")
             mugrade_submit(X.numpy()[0, :])
+            print(f"DEBUG[PTB]: Submitting {y.numpy()[0]=}")
             mugrade_submit(y.numpy()[0])
 
 

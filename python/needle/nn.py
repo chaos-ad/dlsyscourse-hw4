@@ -642,7 +642,13 @@ class Embedding(Module):
             initialized from N(0, 1).
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.device = device
+        self.dtype = dtype
+        
+        # NOTE: Why don't I use requires_grad=True for params everywhere?
+        self.weight = Parameter(init.randn(num_embeddings, embedding_dim, mean=0, std=1, device=device, dtype=dtype)) 
         ### END YOUR SOLUTION
 
     def forward(self, x: Tensor) -> Tensor:
@@ -656,5 +662,8 @@ class Embedding(Module):
         output of shape (seq_len, bs, embedding_dim)
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        X = init.one_hot(self.num_embeddings, x.realize_cached_data().flat, device=self.device, dtype=self.dtype)
+        E = X @ self.weight
+        E = E.reshape(shape=(x.shape[0], x.shape[1], self.embedding_dim))
+        return E
         ### END YOUR SOLUTION
