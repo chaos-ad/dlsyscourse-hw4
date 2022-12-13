@@ -133,7 +133,7 @@ class Sigmoid(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        return ops.power_scalar(ops.add_scalar(ops.exp(-x), 1), scalar=-1)
         ### END YOUR SOLUTION
 
 
@@ -424,7 +424,7 @@ class RNN(Module):
             ) for layer_idx in range(num_layers)]
         ### END YOUR SOLUTION
 
-    def forward(self, X, h0=None):
+    def forward(self, X, H0=None):
         """
         Inputs:
         X of shape (seq_len, bs, input_size) containing the features of the input sequence.
@@ -439,24 +439,24 @@ class RNN(Module):
         ### BEGIN YOUR SOLUTION
         
         batch_size = X.shape[1]
-        h0 = h0 or init.zeros(self.num_layers, batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
-        h0 = list(ops.split(h0, axis=0))
+        H0 = H0 or init.zeros(self.num_layers, batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
+        H0 = list(ops.split(H0, axis=0))
 
-        h_t = h0
+        H_t = H0
         output = []
         for t, X_t in enumerate(list(ops.split(X, axis=0))):
-            h_next = []
-            for layer_idx, h_l in enumerate(h_t):
+            H_next = []
+            for layer_idx, h_t in enumerate(H_t):
                 # In a multi-layer RNN, the input x_t(l) of the l-th layer (l >= 2) is the hidden state h_t^(l-1) of the previous layer.
-                X_l = X_t if layer_idx == 0 else h
-                h = self.rnn_cells[layer_idx](X_l, h_l)
-                h_next.append(h)
-            output.append(h)
-            h_t = h_next
+                h_next = self.rnn_cells[layer_idx](X_t, h_t)
+                X_t = h_next
+                H_next.append(h_next)
+            output.append(h_next)
+            H_t = H_next
 
-        h_n = ops.stack(tuple(h_t), axis=0)
+        H_t = ops.stack(tuple(H_t), axis=0)
         output = ops.stack(tuple(output), axis=0)
-        return output, h_n
+        return output, H_t
         ### END YOUR SOLUTION
 
 
@@ -480,7 +480,18 @@ class LSTMCell(Module):
         """
         super().__init__()
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.dtype = dtype
+        self.device = device
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.sigmoid_fn = Sigmoid()
+        self.tanh_fn = Tanh()
+
+        init_arg = math.sqrt(1/hidden_size)
+        self.W_ih = Parameter(init.rand(input_size, hidden_size * 4, low=-init_arg, high=init_arg, device=device, dtype=dtype))
+        self.W_hh = Parameter(init.rand(hidden_size, hidden_size * 4, low=-init_arg, high=init_arg, device=device, dtype=dtype))
+        self.bias_ih = Parameter(init.rand(hidden_size * 4, low=-init_arg, high=init_arg, device=device, dtype=dtype)) if bias else None
+        self.bias_hh = Parameter(init.rand(hidden_size * 4, low=-init_arg, high=init_arg, device=device, dtype=dtype)) if bias else None
         ### END YOUR SOLUTION
 
 
@@ -501,7 +512,31 @@ class LSTMCell(Module):
             element in the batch.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        
+        batch_size = X.shape[0]
+        h0, c0 = h if h else (None, None)
+        h_in = h0 or init.zeros(batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
+        c_in = c0 or init.zeros(batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
+
+        tmp = (h_in @ self.W_hh) # shape=(batch_size, 4*hidden_size)
+        if self.bias_hh:
+            tmp += ops.broadcast_to(ops.reshape(self.bias_hh, shape=(1,self.hidden_size * 4)), shape=tmp.shape)
+        
+        tmp += (X @ self.W_ih) # shape=(batch_size, 4*hidden_size)
+        if self.bias_ih:
+            tmp += ops.broadcast_to(ops.reshape(self.bias_ih, shape=(1,self.hidden_size * 4)), shape=tmp.shape)
+        
+        tmp_parts = ops.split(ops.reshape(tmp, (batch_size, 4, self.hidden_size)), axis=1)
+        tmp_i = self.sigmoid_fn(tmp_parts[0])
+        tmp_f = self.sigmoid_fn(tmp_parts[1])
+        tmp_g = self.tanh_fn(tmp_parts[2])
+        tmp_o = self.sigmoid_fn(tmp_parts[3])
+
+        c_out = c_in * tmp_f + tmp_i * tmp_g
+        h_out = self.tanh_fn(c_out) * tmp_o
+        
+        return h_out, c_out
+
         ### END YOUR SOLUTION
 
 
@@ -529,7 +564,18 @@ class LSTM(Module):
             of shape (4*hidden_size,).
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+        self.dtype = dtype
+        self.device = device
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm_cells = [
+            LSTMCell(
+                input_size if layer_idx == 0 else hidden_size, 
+                hidden_size, 
+                bias, 
+                device, 
+                dtype
+            ) for layer_idx in range(num_layers)]
         ### END YOUR SOLUTION
 
     def forward(self, X, h=None):
@@ -550,7 +596,34 @@ class LSTM(Module):
             h_n of shape (num_layers, bs, hidden_size) containing the final hidden cell state for each element in the batch.
         """
         ### BEGIN YOUR SOLUTION
-        raise NotImplementedError()
+
+        batch_size = X.shape[1]
+        (H0, C0) = h if h else (None, None)
+        H0 = H0 or init.zeros(self.num_layers, batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
+        C0 = C0 or init.zeros(self.num_layers, batch_size, self.hidden_size, device=self.device, dtype=self.dtype)
+        H0 = list(ops.split(H0, axis=0))
+        C0 = list(ops.split(C0, axis=0))
+
+        H_t = H0
+        C_t = C0
+        output = []
+        for t, X_t in enumerate(list(ops.split(X, axis=0))):
+            H_next = []
+            C_next = []
+            for layer_idx, (h_t, c_t) in enumerate(zip(H_t, C_t)):
+                h_next, c_next = self.lstm_cells[layer_idx](X_t, (h_t, c_t))
+                X_t = h_next
+                H_next.append(h_next)
+                C_next.append(c_next)
+            output.append(h_next)
+            H_t = H_next
+            C_t = C_next
+
+        H_n = ops.stack(tuple(H_t), axis=0)
+        C_n = ops.stack(tuple(C_t), axis=0)
+        output = ops.stack(tuple(output), axis=0)
+        return output, (H_n, C_n)
+
         ### END YOUR SOLUTION
 
 
